@@ -97,8 +97,8 @@ io.on("connection", (socket) => {
         }
 
         // Leave the room
+        console.log(`"${currentUsername}" left room "${room.room}"`);
         socket.leave(room);
-        console.log(`"${currentUsername}" left room "${room}"`);
     });
 
     // Disconnect
