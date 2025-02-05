@@ -15,8 +15,9 @@ const authRoutes = require("./routes/auth");
 const messageRoutes = require("./routes/messages");
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(app.listen(process.env.PORT || 3000, () => {
+    console.log(`Server running on port ${process.env.PORT || 3000}`);
+}));
 
 app.use(express.json());
 app.use(cors());
@@ -28,25 +29,26 @@ app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => console.log("MongoDB Connected"))
+mongoose.connect(process.env.MONGO_URI)
+.then(() => console.log("MongoDB Connected"))
 .catch(err => console.log(err));
 
 let roomMembers = {};
+const socketUsers = {};
 
 // Socket.io
 io.on("connection", (socket) => {
     console.log("New user connected", socket.id);
     let currentUsername = null;
+    
     // Join Room
     socket.on("joinRoom", (data) => {
-
         const {room, username} = data;
         currentUsername = username;
-
+        socketUsers[username] = socket.id;
         socket.join(room);
+
+        io.to(room).emit("roomUpdate", { room, members: Object.keys(socketUsers) });
 
         // Add user to the roomMembers list
         if (!roomMembers[room]) {
@@ -88,6 +90,31 @@ io.on("connection", (socket) => {
         });
     });
 
+    // Handle Private Messages
+    socket.on("privateMessage", async (data) => {
+        const { from_user, to_user, message, room } = data;
+    
+        // Save message to MongoDB
+        const newMessage = new PrivateMessage({
+            from_user,
+            to_user,
+            message,
+            room,
+        });
+    
+        try {
+            await newMessage.save(); // Save to MongoDB
+            console.log("Private message saved to DB");
+    
+            const recipientSocketId = socketUsers[to_user];
+            if (recipientSocketId) {
+                io.to(recipientSocketId).emit("privateMessage", data);
+            }
+        } catch (err) {
+            console.error("Error saving message:", err);
+        }
+    });
+
     // Leave Room
     socket.on("leaveRoom", (room) => {
         if (currentUsername && roomMembers[room]) {
@@ -99,6 +126,7 @@ io.on("connection", (socket) => {
         // Leave the room
         console.log(`"${currentUsername}" left room "${room.room}"`);
         socket.leave(room);
+        delete socketUsers[username]; // Remove user from the map
     });
 
     // Disconnect
@@ -106,6 +134,3 @@ io.on("connection", (socket) => {
         console.log("User disconnected");
     });
 });
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
