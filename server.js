@@ -34,18 +34,30 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log("MongoDB Connected"))
 .catch(err => console.log(err));
 
+let roomMembers = {};
+
 // Socket.io
 io.on("connection", (socket) => {
     console.log("New user connected", socket.id);
-
+    let currentUsername = null;
     // Join Room
     socket.on("joinRoom", (data) => {
 
-        const currentTimestamp = new Date().toISOString();
-
         const {room, username} = data;
+        currentUsername = username;
+
         socket.join(room);
+
+        // Add user to the roomMembers list
+        if (!roomMembers[room]) {
+            roomMembers[room] = [];
+        }
+        roomMembers[room].push(username);
+        io.to(room).emit("roomUpdate", { room, members: roomMembers[room] });
+
         console.log(`"${username}" joined room "${room}"`);
+
+        const currentTimestamp = new Date().toISOString();
 
         io.to(room).emit("chatMessage", {
             from_user: "Admin",
@@ -76,23 +88,17 @@ io.on("connection", (socket) => {
         });
     });
 
-    // Send Private Message
-    socket.on("privateMessage", async (data) => {
-        const { from_user, to_user, message } = data;
-        const newMessage = new PrivateMessage({ from_user, to_user, message });
-        await newMessage.save();
-
-        io.to(to_user).emit("privateMessage", { from_user, message });
-    });
-
-    // Typing Indicator
-    socket.on("typing", (room, user) => {
-        socket.to(room).emit("typing... ", user);
-    });
-
     // Leave Room
     socket.on("leaveRoom", (room) => {
+        if (currentUsername && roomMembers[room]) {
+            // Remove the user from the room's member list
+            roomMembers[room] = roomMembers[room].filter(user => user !== currentUsername);
+            io.to(room).emit("roomUpdate", { room, members: roomMembers[room] });
+        }
+
+        // Leave the room
         socket.leave(room);
+        console.log(`"${currentUsername}" left room "${room}"`);
     });
 
     // Disconnect
