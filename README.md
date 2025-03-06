@@ -1,4 +1,4 @@
-# Lab Test 1 - Chat App
+# Chat Application
 
 This project is designed to create a real-time chat application where users can authenticate, join chat rooms, and send/receive messages in real-time. The app includes persistence using MongoDB to store user data, messages, and room information.
 
